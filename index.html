@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="style.css" />
+    <title>Contact Manager</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+      }
+
+      #contacts li {
+        margin: 5px 0;
+      }
+
+      button {
+        margin-left: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <div>
+      <h1>Contact Manager</h1>
+      <input type="text" id="contactInput" placeholder="Enter contact number" />
+      <button id="addContactBtn">Add Contact</button>
+      <ul id="contacts"></ul>
+    </div>
+    <script>
+      const userId = "2347046519835"; // Example user ID
+      const apiBaseUrl = "http://localhost:3000";
+
+      // Fetch and display contacts on page load
+      async function fetchContacts() {
+        const response = await fetch(`${apiBaseUrl}/contacts/${userId}`);
+        const contacts = await response.json();
+        contacts.forEach(addContactToUI);
+      }
+
+      // Add contact to the database
+      async function addContact(contact) {
+        await fetch(`${apiBaseUrl}/contacts/${userId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ contact }),
+        });
+        addContactToUI(contact);
+      }
+
+      // Delete contact from the database
+      async function deleteContact(contact, listItem) {
+        await fetch(`${apiBaseUrl}/contacts/${userId}`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ contact }),
+        });
+        listItem.remove();
+      }
+
+      // Add contact to the UI
+      function addContactToUI(contact) {
+        const li = document.createElement("li");
+        li.textContent = contact;
+
+        const deleteBtn = document.createElement("button");
+        deleteBtn.textContent = "Delete";
+        deleteBtn.addEventListener("click", () => deleteContact(contact, li));
+
+        li.appendChild(deleteBtn);
+        document.getElementById("contacts").appendChild(li);
+      }
+
+      // Initialize
+      document.addEventListener("DOMContentLoaded", () => {
+        const contactInput = document.getElementById("contactInput");
+        const addContactBtn = document.getElementById("addContactBtn");
+
+        addContactBtn.addEventListener("click", () => {
+          const contact = contactInput.value.trim();
+          if (contact && /^[0-9]+$/.test(contact)) {
+            addContact(contact);
+            contactInput.value = "";
+          } else {
+            alert("Please enter a valid phone number.");
+          }
+        });
+
+        fetchContacts();
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,1323 @@
+<!DOCTYPE html>
+<html>
+<body>
+  <h1>Chat App</h1>
+  <div id="chat"></div>
+  <input id="message" placeholder="Type a message..." />
+  <button onclick="sendMessage()">Send</button>
+
+  <script>
+    const ws = new WebSocket('ws://localhost:8080');
+    const chatDiv = document.getElementById('chat');
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.type === 'history') {
+        data.data.forEach((msg) => appendMessage(`${msg.username}: ${msg.message}`));
+      } else if (data.type === 'message') {
+        appendMessage(`${data.data.username}: ${data.data.message}`);
+      }
+    };
+
+    function appendMessage(message) {
+      const div = document.createElement('div');
+      div.textContent = message;
+      chatDiv.appendChild(div);
+    }
+
+    function sendMessage() {
+      const message = document.getElementById('message').value;
+      ws.send(JSON.stringify({ username: 'User', message }));
+    }
+  </script>
+</body>
+</html>
+
+
+<!-- <!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebSocket Chat</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+        background-color: #f9f9f9;
+      }
+      .chat-container {
+        display: flex;
+        justify-content: space-between;
+        gap: 20px;
+      }
+      .chat-box {
+        flex: 1;
+        border: 1px solid #ddd;
+        height: 300px;
+        overflow-y: auto;
+        padding: 10px;
+        background: #fff;
+      }
+      input,
+      button {
+        width: calc(100% - 20px);
+        padding: 10px;
+        margin: 5px 0;
+      }
+      button {
+        background: #007bff;
+        color: #fff;
+        border: none;
+        cursor: pointer;
+      }
+      button:disabled {
+        background: #aaa;
+        cursor: not-allowed;
+      }
+      .message {
+        margin-bottom: 10px;
+        word-wrap: break-word;
+      }
+      .chat-box h3 {
+        margin-top: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>WebSocket Chat</h1>
+
+    <label for="user-id">Your User ID:</label>
+    <input type="text" id="user-id" placeholder="Enter your user ID" />
+
+    <div class="chat-container">
+      <div id="sender-chat" class="chat-box">
+        <h3>Your Messages</h3>
+        <div id="sender-messages"></div>
+        <label for="recipient-id">Recipient User ID:</label>
+        <input type="text" id="recipient-id" placeholder="Recipient User ID" />
+        <label for="message">Message:</label>
+        <input type="text" id="message" placeholder="Type your message here" />
+        <button id="send" disabled>Send Message</button>
+      </div>
+      <div id="receiver-chat" class="chat-box">
+        <h3>Received Messages</h3>
+        <div id="receiver-messages"></div>
+      </div>
+    </div>
+
+    <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        let socket;
+        const userIdInput = document.getElementById("user-id");
+        const recipientIdInput = document.getElementById("recipient-id");
+        const messageInput = document.getElementById("message");
+        const sendButton = document.getElementById("send");
+        const senderMessages = document.getElementById("sender-messages");
+        const receiverMessages = document.getElementById("receiver-messages");
+    
+        let connectedUsers = new Set(); // Track connected users
+    
+        // Connect to WebSocket server
+        userIdInput.addEventListener("change", () => {
+          const userID = userIdInput.value.trim();
+          if (!userID) return;
+    
+          if (socket) socket.close();
+    
+          socket = new WebSocket(`ws://localhost:8080?userID=${encodeURIComponent(userID)}`);
+    
+          socket.onopen = () => {
+            sendButton.disabled = false;
+            appendMessage(senderMessages, "Connected to server.");
+            connectedUsers.add(userID); // Add user to connected users
+            checkLoadHistory(userID); // Check if history should be loaded
+          };
+    
+          socket.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+    
+            if (data.type === "chatHistory") {
+              displayChatHistory(data.history, userID);
+            } else if (data.senderID && data.recipientID && data.content) {
+              appendMessage(receiverMessages, `From ${data.senderID}: ${data.content}`);
+            }
+          };
+    
+          socket.onclose = () => {
+            appendMessage(senderMessages, "Disconnected from server.");
+            sendButton.disabled = true;
+            connectedUsers.delete(userID); // Remove user from connected users
+          };
+    
+          socket.onerror = (error) => {
+            console.error("WebSocket error:", error);
+          };
+        });
+    
+        // Fetch chat history when recipientID changes
+        recipientIdInput.addEventListener("change", () => {
+          const recipientID = recipientIdInput.value.trim();
+          if (!recipientID || !socket) return;
+    
+          // Check if both users are connected before fetching history
+          const senderID = userIdInput.value.trim();
+          if (connectedUsers.has(senderID) && connectedUsers.has(recipientID)) {
+            socket.send(JSON.stringify({ type: "fetchHistory", peerID: recipientID }));
+          } else {
+            appendMessage(senderMessages, "Both users must be connected to fetch chat history.");
+          }
+        });
+    
+        sendButton.addEventListener("click", () => {
+          const recipientID = recipientIdInput.value.trim();
+          const content = messageInput.value.trim();
+    
+          if (!recipientID || !content) {
+            appendMessage(senderMessages, "Error: Recipient ID and message are required.");
+            return;
+          }
+    
+          const message = JSON.stringify({ type: "newMessage", recipientID, content });
+          socket.send(message);
+          appendMessage(senderMessages, `You to ${recipientID}: ${content}`);
+          messageInput.value = "";
+        });
+    
+        function displayChatHistory(history, userID) {
+          senderMessages.innerHTML = ""; // Clear existing messages
+          receiverMessages.innerHTML = ""; // Clear received messages
+    
+          history.forEach((msg) => {
+            const isSent = msg.senderID === userID;
+            const displayText = isSent
+              ? `You to ${msg.recipientID}: ${msg.content}`
+              : `From ${msg.senderID}: ${msg.content}`;
+            appendMessage(isSent ? senderMessages : receiverMessages, `${new Date(msg.timestamp).toLocaleTimeString()} ${displayText}`);
+          });
+        }
+    
+        function appendMessage(container, message) {
+          const div = document.createElement("div");
+          div.className = "message";
+          div.textContent = message;
+          container.appendChild(div);
+          container.scrollTop = container.scrollHeight;
+        }
+    
+        // Check if both users are connected and history should be loaded
+        function checkLoadHistory(userID) {
+          const recipientID = recipientIdInput.value.trim();
+          if (recipientID && connectedUsers.has(userID) && connectedUsers.has(recipientID)) {
+            socket.send(JSON.stringify({ type: "fetchHistory", peerID: recipientID }));
+          }
+        }
+      });
+    </script>
+    
+    
+  </body>
+</html> -->
+
+
+
+<!-- second send, no history -->
+ <!-- <!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebSocket Chat</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+        background-color: #f9f9f9;
+      }
+      .chat-container {
+        display: flex;
+        justify-content: space-between;
+        gap: 20px;
+      }
+      .chat-box {
+        flex: 1;
+        border: 1px solid #ddd;
+        height: 300px;
+        overflow-y: auto;
+        padding: 10px;
+        background: #fff;
+      }
+      input,
+      button {
+        width: calc(100% - 20px);
+        padding: 10px;
+        margin: 5px 0;
+      }
+      button {
+        background: #007bff;
+        color: #fff;
+        border: none;
+        cursor: pointer;
+      }
+      button:disabled {
+        background: #aaa;
+        cursor: not-allowed;
+      }
+      .message {
+        margin-bottom: 10px;
+        word-wrap: break-word;
+      }
+      .chat-box h3 {
+        margin-top: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>WebSocket Chat</h1>
+
+    <label for="user-id">Your User ID:</label>
+    <input type="text" id="user-id" placeholder="Enter your user ID" />
+
+    <div class="chat-container">
+      <div id="sender-chat" class="chat-box">
+        <h3>Your Messages</h3>
+        <div id="sender-messages"></div>
+        <label for="recipient-id">Recipient User ID:</label>
+        <input type="text" id="recipient-id" placeholder="Recipient User ID" />
+        <label for="message">Message:</label>
+        <input type="text" id="message" placeholder="Type your message here" />
+        <button id="send" disabled>Send Message</button>
+      </div>
+      <div id="receiver-chat" class="chat-box">
+        <h3>Received Messages</h3>
+        <div id="receiver-messages"></div>
+      </div>
+    </div>
+
+    <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        let socket;
+        const userIdInput = document.getElementById("user-id");
+        const recipientIdInput = document.getElementById("recipient-id");
+        const messageInput = document.getElementById("message");
+        const sendButton = document.getElementById("send");
+        const senderMessages = document.getElementById("sender-messages");
+        const receiverMessages = document.getElementById("receiver-messages");
+
+        userIdInput.addEventListener("change", () => {
+          const userID = userIdInput.value.trim();
+          if (!userID) return;
+
+          if (socket) socket.close();
+
+          // Create WebSocket connection with userID
+          socket = new WebSocket(`ws://localhost:8080?userID=${encodeURIComponent(userID)}`);
+
+          socket.onopen = () => {
+            sendButton.disabled = false;
+            appendMessage(senderMessages, "Connected to the server.");
+          };
+
+          socket.onmessage = (event) => {
+            try {
+              const data = JSON.parse(event.data);
+
+              if (data.type === "chatHistory") {
+                displayChatHistory(data.history, userID);
+              } else if (data.senderID && data.content) {
+                const isSelf = data.senderID === userID;
+                const container = isSelf ? senderMessages : receiverMessages;
+                appendMessage(container, isSelf ? `You: ${data.content}` : `From ${data.senderID}: ${data.content}`);
+              }
+            } catch (error) {
+              console.error("Error parsing message:", error);
+            }
+          };
+
+          socket.onclose = () => {
+            appendMessage(senderMessages, "Disconnected from server.");
+            sendButton.disabled = true;
+          };
+
+          socket.onerror = (error) => {
+            console.error("WebSocket error:", error);
+          };
+        });
+
+        sendButton.addEventListener("click", () => {
+          const senderID = userIdInput.value.trim();
+          const recipientID = recipientIdInput.value.trim();
+          const content = messageInput.value.trim();
+
+          if (!senderID || !recipientID || !content) {
+            appendMessage(senderMessages, "Error: All fields are required.");
+            return;
+          }
+
+          const message = JSON.stringify({ type: "sendMessage", recipientID, content });
+          socket.send(message);
+          appendMessage(senderMessages, `${new Date().toLocaleTimeString()} You to ${recipientID}: ${content}`);
+          messageInput.value = "";
+        });
+
+        recipientIdInput.addEventListener("change", () => {
+          const recipientID = recipientIdInput.value.trim();
+          if (!recipientID) return;
+
+          const fetchHistoryMessage = JSON.stringify({ type: "fetchHistory", recipientID });
+          socket.send(fetchHistoryMessage);
+        });
+
+        function displayChatHistory(history, userID) {
+          senderMessages.innerHTML = "";
+          receiverMessages.innerHTML = "";
+          history.forEach((msg) => {
+            const isSent = msg.senderID === userID;
+            const displayText = isSent ? `You to ${msg.recipientID}: ${msg.content}` : `From ${msg.senderID}: ${msg.content}`;
+            appendMessage(isSent ? senderMessages : receiverMessages, displayText);
+          });
+        }
+
+        function appendMessage(container, message) {
+          const div = document.createElement("div");
+          div.className = "message";
+          div.textContent = message;
+          container.appendChild(div);
+          container.scrollTop = container.scrollHeight;
+        }
+      });
+    </script>
+  </body>
+</html>  -->
+
+
+
+
+
+<!-- ....................................................................... -->
+<!-- first system -->
+ <!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebSocket Chat</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background-color: #f9f9f9;
+    }
+    .chat-container {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .chat-box {
+      flex: 1;
+      border: 1px solid #ddd;
+      height: 300px;
+      overflow-y: auto;
+      padding: 10px;
+      background: #fff;
+    }
+    input, button {
+      width: calc(100% - 20px);
+      padding: 10px;
+      margin: 5px 0;
+    }
+    button {
+      background: #007BFF;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    button:disabled {
+      background: #aaa;
+    }
+    .message {
+      margin-bottom: 10px;
+    }
+    .status {
+      font-size: 0.9em;
+      margin-bottom: 10px;
+      color: gray;
+    }
+    .from {
+      font-weight: bold;
+    }
+    .content {
+      margin-left: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>WebSocket Chat</h1>
+
+  <div id="connection-status" class="status">Disconnected</div>
+
+  <label for="user-id">Your User ID:</label>
+  <input type="text" id="user-id" placeholder="2347034654367" />
+
+  <div class="chat-container">
+    <div id="sender-chat" class="chat-box">
+      <h3>Your Messages</h3>
+      <div id="sender-messages"></div>
+      <label for="recipient-id">Recipient User ID:</label>
+      <input type="text" id="recipient-id" placeholder="Recipient User ID" />
+      <label for="message">Message:</label>
+      <input type="text" id="message" placeholder="Type your message here" />
+      <button id="send" disabled>Send Message</button>
+    </div>
+
+    <div id="receiver-chat" class="chat-box">
+      <h3>Received Messages</h3>
+      <div id="receiver-messages"></div>
+    </div>
+  </div>
+
+  <script>
+    let socket;
+  
+    const userIdInput = document.getElementById('user-id');
+    const recipientIdInput = document.getElementById('recipient-id');
+    const messageInput = document.getElementById('message');
+    const sendButton = document.getElementById('send');
+    const senderMessages = document.getElementById('sender-messages');
+    const receiverMessages = document.getElementById('receiver-messages');
+    const connectionStatus = document.getElementById('connection-status');
+  
+    // Function to update connection status
+    function updateConnectionStatus(status) {
+      connectionStatus.textContent = status;
+      connectionStatus.style.color = status === 'Connected' ? 'green' : 'red';
+    }
+  
+    // Connect to WebSocket server when user ID changes
+    userIdInput.addEventListener('change', () => {
+      const userID = userIdInput.value.trim();
+      if (!userID) return;
+  
+      if (socket) socket.close();
+  
+      socket = new WebSocket(`ws://localhost:8080?userID=${encodeURIComponent(userID)}`);
+  
+      socket.onopen = () => {
+        sendButton.disabled = false;
+        updateConnectionStatus('Connected');
+        appendMessage(senderMessages, 'Connected to server.');
+      };
+  
+      socket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.senderID && data.content) {
+          appendMessage(
+            receiverMessages,
+            `${data.timestamp ? `[${new Date(data.timestamp).toLocaleTimeString()}]` : ''} 
+            From ${data.senderID}: ${data.content}`
+          );
+        } else {
+          appendMessage(senderMessages, `System: ${data.message}`);
+        }
+      };
+  
+      socket.onclose = () => {
+        appendMessage(senderMessages, 'Disconnected from server.');
+        updateConnectionStatus('Disconnected');
+        sendButton.disabled = true;
+      };
+  
+      socket.onerror = (error) => {
+        appendMessage(senderMessages, `Error: ${error.message}`);
+        updateConnectionStatus('Error');
+      };
+    });
+  
+    // Send message to recipient
+    sendButton.addEventListener('click', () => {
+      const senderID = userIdInput.value.trim();
+      const recipientID = recipientIdInput.value.trim();
+      const content = messageInput.value.trim();
+  
+      if (!senderID || !recipientID || !content) {
+        appendMessage(senderMessages, 'Error: All fields are required.');
+        return;
+      }
+  
+      const message = JSON.stringify({ senderID, recipientID, content });
+      socket.send(message);
+      appendMessage(
+        senderMessages,
+        `${new Date().toLocaleTimeString()} You to ${recipientID}: ${content}`
+      );
+      messageInput.value = '';
+    });
+  
+    // Function to display messages in the chat
+    function appendMessage(container, message) {
+      const div = document.createElement('div');
+      div.textContent = message;
+      container.appendChild(div);
+      container.scrollTop = container.scrollHeight;
+    }
+  </script>  
+
+</body>
+</html>  -->
+<!-- ...................................... -->
+
+
+
+
+
+
+
+
+
+<!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebSocket Chat with Redis</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; background-color: #f9f9f9; }
+    .chat-container { display: flex; justify-content: space-between; }
+    .chat-box { width: 45%; border: 1px solid #ddd; height: 300px; overflow-y: auto; padding: 10px; background: #fff; }
+    input, button { width: calc(100% - 20px); padding: 10px; margin: 5px 0; }
+    button { background: #007BFF; color: #fff; border: none; cursor: pointer; }
+    button:disabled { background: #aaa; }
+    .message { margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+  <h1>WebSocket Chat</h1>
+
+  <label for="user-id">Your User ID:</label>
+  <input type="text" id="user-id" placeholder="Enter your user ID" />
+
+  <div class="chat-container">
+    <div id="sender-chat" class="chat-box">
+      <h3>Your Messages</h3>
+      <div id="sender-messages"></div>
+      <label for="recipient-id">Recipient User ID:</label>
+      <input type="text" id="recipient-id" placeholder="Recipient User ID" />
+      <label for="message">Message:</label>
+      <input type="text" id="message" placeholder="Type your message here" />
+      <button id="send" disabled>Send Message</button>
+    </div>
+    <div id="receiver-chat" class="chat-box">
+      <h3>Received Messages</h3>
+      <div id="receiver-messages"></div>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+  let socket;
+
+  const userIdInput = document.getElementById("user-id");
+  const recipientIdInput = document.getElementById("recipient-id");
+  const messageInput = document.getElementById("message");
+  const sendButton = document.getElementById("send");
+  const senderMessages = document.getElementById("sender-messages");
+  const receiverMessages = document.getElementById("receiver-messages");
+
+  // Connect to WebSocket server
+  userIdInput.addEventListener("change", () => {
+    const userID = userIdInput.value.trim();
+    if (!userID) return;
+
+    if (socket) socket.close();
+
+    socket = new WebSocket(`ws://localhost:8080?userID=${encodeURIComponent(userID)}`);
+
+    socket.onopen = () => {
+      sendButton.disabled = false;
+      appendMessage(senderMessages, "Connected to server.");
+    };
+
+    socket.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+
+      if (data.type === "chatHistory") {
+        displayChatHistory(data.history, userID);
+      } else if (data.senderID && data.content) {
+        appendMessage(receiverMessages, `From ${data.senderID}: ${data.content}`);
+      }
+    };
+
+    socket.onclose = () => {
+      appendMessage(senderMessages, "Disconnected from server.");
+      sendButton.disabled = true;
+    };
+  });
+
+  // Fetch chat history when recipientID changes
+  recipientIdInput.addEventListener("change", () => {
+    const recipientID = recipientIdInput.value.trim();
+    if (!recipientID || !socket) return;
+
+    socket.send(JSON.stringify({ type: "fetchHistory", recipientID }));
+  });
+
+  sendButton.addEventListener("click", () => {
+    const recipientID = recipientIdInput.value.trim();
+    const content = messageInput.value.trim();
+
+    if (!recipientID || !content) {
+      appendMessage(senderMessages, "Error: Recipient ID and message are required.");
+      return;
+    }
+
+    const message = JSON.stringify({ type: "newMessage", recipientID, content });
+    socket.send(message);
+    appendMessage(senderMessages, `You to ${recipientID}: ${content}`);
+    messageInput.value = "";
+  });
+
+  function displayChatHistory(history, userID) {
+    senderMessages.innerHTML = ""; // Clear existing messages
+    history.forEach((msg) => {
+      const isSent = msg.senderID === userID;
+      const displayText = isSent
+        ? `You to ${msg.recipientID}: ${msg.content}`
+        : `From ${msg.senderID}: ${msg.content}`;
+      appendMessage(isSent ? senderMessages : receiverMessages, displayText);
+    });
+  }
+
+  function appendMessage(container, message) {
+    const div = document.createElement("div");
+    div.textContent = message;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+  }
+});
+  </script>
+</body>
+</html>  -->
+
+<!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebSocket Chat with Redis</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; background-color: #f9f9f9; }
+    .chat-container { display: flex; justify-content: space-between; }
+    .chat-box { width: 45%; border: 1px solid #ddd; height: 300px; overflow-y: auto; padding: 10px; background: #fff; }
+    input, button { width: calc(100% - 20px); padding: 10px; margin: 5px 0; }
+    button { background: #007BFF; color: #fff; border: none; cursor: pointer; }
+    button:disabled { background: #aaa; }
+    .message { margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+  <h1>WebSocket Chat</h1>
+
+  <label for="user-id">Your User ID:</label>
+  <input type="text" id="user-id" placeholder="Enter your user ID" />
+
+  <div class="chat-container">
+    <div id="sender-chat" class="chat-box">
+      <h3>Your Messages</h3>
+      <div id="sender-messages"></div>
+      <label for="recipient-id">Recipient User ID:</label>
+      <input type="text" id="recipient-id" placeholder="Recipient User ID" />
+      <label for="message">Message:</label>
+      <input type="text" id="message" placeholder="Type your message here" />
+      <button id="send" disabled>Send Message</button>
+    </div>
+    <div id="receiver-chat" class="chat-box">
+      <h3>Received Messages</h3>
+      <div id="receiver-messages"></div>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+  let socket;
+
+  const userIdInput = document.getElementById("user-id");
+  const recipientIdInput = document.getElementById("recipient-id");
+  const messageInput = document.getElementById("message");
+  const sendButton = document.getElementById("send");
+  const senderMessages = document.getElementById("sender-messages");
+  const receiverMessages = document.getElementById("receiver-messages");
+
+  // Connect to WebSocket server
+  userIdInput.addEventListener("change", () => {
+    const userID = userIdInput.value.trim();
+    if (!userID) return;
+
+    if (socket) socket.close();
+
+    socket = new WebSocket(`ws://localhost:8080?userID=${encodeURIComponent(userID)}`);
+
+    socket.onopen = () => {
+      sendButton.disabled = false;
+      appendMessage(senderMessages, "Connected to server.");
+    };
+
+    socket.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+
+      if (data.type === "chatHistory") {
+        displayChatHistory(data.history, userID);
+      } else if (data.senderID && data.content) {
+        appendMessage(receiverMessages, `From ${data.senderID}: ${data.content}`);
+      }
+    };
+
+    socket.onclose = () => {
+      appendMessage(senderMessages, "Disconnected from server.");
+      sendButton.disabled = true;
+    };
+  });
+
+  // Fetch chat history when recipientID changes
+  recipientIdInput.addEventListener("change", () => {
+    const recipientID = recipientIdInput.value.trim();
+    if (!recipientID || !socket) return;
+
+    socket.send(JSON.stringify({ type: "fetchHistory", recipientID }));
+  });
+
+  sendButton.addEventListener("click", () => {
+    const recipientID = recipientIdInput.value.trim();
+    const content = messageInput.value.trim();
+
+    if (!recipientID || !content) {
+      appendMessage(senderMessages, "Error: Recipient ID and message are required.");
+      return;
+    }
+
+    const message = JSON.stringify({ type: "newMessage", recipientID, content });
+    socket.send(message);
+    appendMessage(senderMessages, `You to ${recipientID}: ${content}`);
+    messageInput.value = "";
+  });
+
+  function displayChatHistory(history, userID) {
+    senderMessages.innerHTML = ""; // Clear existing messages
+    history.forEach((msg) => {
+      const isSent = msg.senderID === userID;
+      const displayText = isSent
+        ? `You to ${msg.recipientID}: ${msg.content}`
+        : `From ${msg.senderID}: ${msg.content}`;
+      appendMessage(isSent ? senderMessages : receiverMessages, displayText);
+    });
+  }
+
+  function appendMessage(container, message) {
+    const div = document.createElement("div");
+    div.textContent = message;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+  }
+});
+  </script>
+</body>
+</html> -->
+
+<!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebSocket Chat with Redis</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; background-color: #f9f9f9; }
+    .chat-container { display: flex; justify-content: space-between; }
+    .chat-box { width: 45%; border: 1px solid #ddd; height: 300px; overflow-y: auto; padding: 10px; background: #fff; }
+    input, button { width: calc(100% - 20px); padding: 10px; margin: 5px 0; }
+    button { background: #007BFF; color: #fff; border: none; cursor: pointer; }
+    button:disabled { background: #aaa; }
+    .message { margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+  <h1>WebSocket Chat</h1>
+
+  <label for="user-id">Your User ID:</label>
+  <input type="text" id="user-id" placeholder="Enter your user ID" />
+
+  <div class="chat-container">
+    <div id="sender-chat" class="chat-box">
+      <h3>Your Messages</h3>
+      <div id="sender-messages"></div>
+      <label for="recipient-id">Recipient User ID:</label>
+      <input type="text" id="recipient-id" placeholder="Recipient User ID" />
+      <label for="message">Message:</label>
+      <input type="text" id="message" placeholder="Type your message here" />
+      <button id="send" disabled>Send Message</button>
+    </div>
+
+    <div id="receiver-chat" class="chat-box">
+      <h3>Received Messages</h3>
+      <div id="receiver-messages"></div>
+    </div>
+  </div>
+
+  <script>
+    let socket;
+
+    const userIdInput = document.getElementById('user-id');
+    const recipientIdInput = document.getElementById('recipient-id');
+    const messageInput = document.getElementById('message');
+    const sendButton = document.getElementById('send');
+    const senderMessages = document.getElementById('sender-messages');
+    const receiverMessages = document.getElementById('receiver-messages');
+
+    // Connect to WebSocket server when user ID changes
+    userIdInput.addEventListener('change', () => {
+      const userId = userIdInput.value.trim();
+      if (!userId) return;
+
+      if (socket) socket.close();
+
+      socket = new WebSocket(`ws://localhost:8080?userID=${encodeURIComponent(userId)}`);
+
+      socket.onopen = () => {
+        sendButton.disabled = false;
+        appendMessage(senderMessages, 'Connected to server.');
+
+        const recipientID = recipientIdInput.value.trim();
+        if (recipientID) {
+          socket.send(JSON.stringify({ type: "fetchHistory", recipientID }));
+        }
+      };
+
+      socket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+
+        if (data.type === "chatHistory") {
+          data.history.forEach((msg) => {
+            const direction = msg.senderID === userId ? "You to" : `From ${msg.senderID}:`;
+            appendMessage(senderMessages, `${direction} ${msg.recipientID}: ${msg.content}`);
+          });
+        } else if (data.senderID && data.content) {
+          appendMessage(receiverMessages, `From ${data.senderID}: ${data.content}`);
+        }
+      };
+
+      socket.onclose = () => {
+        appendMessage(senderMessages, 'Disconnected from server.');
+        sendButton.disabled = true;
+      };
+    });
+
+    // Send message to recipient
+    sendButton.addEventListener('click', () => {
+      const recipientID = recipientIdInput.value.trim();
+      const content = messageInput.value.trim();
+
+      if (!recipientID || !content) {
+        appendMessage(senderMessages, 'Error: Recipient ID and message are required.');
+        return;
+      }
+
+      const message = JSON.stringify({ type: "newMessage", recipientID, content });
+      socket.send(message);
+      appendMessage(senderMessages, `You to ${recipientID}: ${content}`);
+      messageInput.value = '';
+    });
+
+    // Function to display messages in the chat
+    function appendMessage(container, message) {
+      const div = document.createElement('div');
+      div.textContent = message;
+      container.appendChild(div);
+      container.scrollTop = container.scrollHeight;
+    }
+  </script>
+</body>
+</html> -->
+
+<!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebSocket Chat</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; background-color: #f9f9f9; }
+    .chat-container { display: flex; justify-content: space-between; }
+    .chat-box { width: 45%; border: 1px solid #ddd; height: 300px; overflow-y: auto; padding: 10px; background: #fff; }
+    input, button { width: calc(100% - 20px); padding: 10px; margin: 5px 0; }
+    button { background: #007BFF; color: #fff; border: none; cursor: pointer; }
+    button:disabled { background: #aaa; }
+    .message { margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+  <h1>WebSocket Chat</h1>
+
+  <label for="user-id">Your User ID:</label>
+  <input type="text" id="user-id" placeholder="Enter your user ID" />
+
+  <div class="chat-container">
+    <div id="sender-chat" class="chat-box">
+      <h3>Your Messages</h3>
+      <div id="sender-messages"></div>
+      <label for="recipient-id">Recipient User ID:</label>
+      <input type="text" id="recipient-id" placeholder="Recipient User ID" />
+      <label for="message">Message:</label>
+      <input type="text" id="message" placeholder="Type your message here" />
+      <button id="send" disabled>Send Message</button>
+      <button id="fetch-history" disabled>Fetch History</button>
+    </div>
+
+    <div id="receiver-chat" class="chat-box">
+      <h3>Received Messages</h3>
+      <div id="receiver-messages"></div>
+    </div>
+  </div>
+
+  <script>
+    let socket;
+
+    const userIdInput = document.getElementById('user-id');
+    const recipientIdInput = document.getElementById('recipient-id');
+    const messageInput = document.getElementById('message');
+    const sendButton = document.getElementById('send');
+    const fetchHistoryButton = document.getElementById('fetch-history');
+    const senderMessages = document.getElementById('sender-messages');
+    const receiverMessages = document.getElementById('receiver-messages');
+
+    // Connect to WebSocket server when user ID changes
+    userIdInput.addEventListener('change', () => {
+      const userId = userIdInput.value.trim();
+      if (!userId) return;
+
+      if (socket) socket.close();
+
+      socket = new WebSocket(`ws://localhost:8080?userID=${encodeURIComponent(userId)}`);
+
+      socket.onopen = () => {
+        sendButton.disabled = false;
+        fetchHistoryButton.disabled = false;
+        appendMessage(senderMessages, 'Connected to server.');
+      };
+
+      socket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+
+        if (data.type === "history") {
+          displayHistory(data.history);
+        } else if (data.senderID && data.content) {
+          appendMessage(receiverMessages, `From ${data.senderID}: ${data.content}`);
+        } else {
+          appendMessage(senderMessages, `System: ${data.message || "Unexpected message"}`);
+        }
+      };
+
+      socket.onclose = () => {
+        appendMessage(senderMessages, 'Disconnected from server.');
+        sendButton.disabled = true;
+        fetchHistoryButton.disabled = true;
+      };
+    });
+
+    // Send message to recipient
+    sendButton.addEventListener('click', () => {
+      const recipientID = recipientIdInput.value.trim();
+      const content = messageInput.value.trim();
+
+      if (!recipientID || !content) {
+        appendMessage(senderMessages, 'Error: Recipient ID and message are required.');
+        return;
+      }
+
+      const message = JSON.stringify({ type: "sendMessage", recipientID, content });
+      socket.send(message);
+      appendMessage(senderMessages, `You to ${recipientID}: ${content}`);
+      messageInput.value = '';
+    });
+
+    // Fetch chat history
+    fetchHistoryButton.addEventListener('click', () => {
+      const recipientID = recipientIdInput.value.trim();
+
+      if (!recipientID) {
+        appendMessage(senderMessages, 'Error: Recipient ID is required for fetching history.');
+        return;
+      }
+
+      const request = JSON.stringify({ type: "getHistory", recipientID });
+      socket.send(request);
+    });
+
+    // Display chat history
+    function displayHistory(history) {
+      senderMessages.innerHTML = "";
+      receiverMessages.innerHTML = "";
+
+      history.forEach((message) => {
+        if (message.senderID === userIdInput.value) {
+          appendMessage(senderMessages, `You to ${message.recipientID}: ${message.content}`);
+        } else {
+          appendMessage(receiverMessages, `From ${message.senderID}: ${message.content}`);
+        }
+      });
+    }
+
+    // Function to display messages in the chat
+    function appendMessage(container, message) {
+      const div = document.createElement('div');
+      div.textContent = message;
+      container.appendChild(div);
+      container.scrollTop = container.scrollHeight;
+    }
+  </script>
+</body>
+</html> -->
+
+<!--2 <!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebSocket Chat</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; background-color: #f9f9f9; }
+    .chat-container { display: flex; justify-content: space-between; }
+    .chat-box { width: 45%; border: 1px solid #ddd; height: 300px; overflow-y: auto; padding: 10px; background: #fff; }
+    input, button { width: calc(100% - 20px); padding: 10px; margin: 5px 0; }
+    button { background: #007BFF; color: #fff; border: none; cursor: pointer; }
+    button:disabled { background: #aaa; }
+    .message { margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+  <h1>WebSocket Chat</h1>
+
+  <label for="user-id">Your User ID:</label>
+  <input type="text" id="user-id" placeholder="Enter your user ID" />
+
+  <div class="chat-container">
+    <div id="sender-chat" class="chat-box">
+      <h3>Your Messages</h3>
+      <div id="sender-messages"></div>
+      <label for="recipient-id">Recipient User ID:</label>
+      <input type="text" id="recipient-id" placeholder="Recipient User ID" />
+      <label for="message">Message:</label>
+      <input type="text" id="message" placeholder="Type your message here" />
+      <button id="send" disabled>Send Message</button>
+    </div>
+
+    Receiver Messages
+    <div id="receiver-chat" class="chat-box">
+      <h3>Received Messages</h3>
+      <div id="receiver-messages"></div>
+    </div>
+  </div>
+
+  <script>
+    let socket;
+
+    const userIdInput = document.getElementById('user-id');
+    const recipientIdInput = document.getElementById('recipient-id');
+    const messageInput = document.getElementById('message');
+    const sendButton = document.getElementById('send');
+    const senderMessages = document.getElementById('sender-messages');
+    const receiverMessages = document.getElementById('receiver-messages');
+
+    // Connect to WebSocket server when user ID changes
+    userIdInput.addEventListener('change', () => {
+      const userId = userIdInput.value.trim();
+      if (!userId) return;
+
+      if (socket) socket.close();
+
+      socket = new WebSocket(`ws://localhost:8080?userID=${encodeURIComponent(userId)}`);
+
+      socket.onopen = () => {
+        sendButton.disabled = false;
+        appendMessage(senderMessages, 'Connected to server.');
+      };
+
+      socket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.senderID && data.content) {
+          appendMessage(receiverMessages, `From ${data.senderID}: ${data.content}`);
+        } else {
+          appendMessage(senderMessages, `System: ${data.message || "Unexpected message"}`);
+        }
+      };
+
+      socket.onclose = () => {
+        appendMessage(senderMessages, 'Disconnected from server.');
+        sendButton.disabled = true;
+      };
+    });
+
+    // Send message to recipient
+    sendButton.addEventListener('click', () => {
+      const recipientID = recipientIdInput.value.trim();
+      const content = messageInput.value.trim();
+
+      if (!recipientID || !content) {
+        appendMessage(senderMessages, 'Error: Recipient ID and message are required.');
+        return;
+      }
+
+      const message = JSON.stringify({ recipientID, content });
+      socket.send(message);
+      appendMessage(senderMessages, `You to ${recipientID}: ${content}`);
+      messageInput.value = '';
+    });
+
+    // Function to display messages in the chat
+    function appendMessage(container, message) {
+      const div = document.createElement('div');
+      div.textContent = message;
+      container.appendChild(div);
+      container.scrollTop = container.scrollHeight;
+    }
+  </script>
+</body>
+</html> -->
+
+<!-- 1   <!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebSocket Chat</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background-color: #f9f9f9;
+    }
+    .chat-container {
+      display: flex;
+      justify-content: space-between;
+    }
+    .chat-box {
+      width: 45%;
+      border: 1px solid #ddd;
+      height: 300px;
+      overflow-y: auto;
+      padding: 10px;
+      background: #fff;
+    }
+    input, button {
+      width: calc(100% - 20px);
+      padding: 10px;
+      margin: 5px 0;
+    }
+    button {
+      background: #007BFF;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    button:disabled {
+      background: #aaa;
+    }
+    .message {
+      margin-bottom: 10px;
+    }
+    .from {
+      font-weight: bold;
+    }
+    .content {
+      margin-left: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>WebSocket Chat</h1>
+
+  User ID Input 
+  <label for="user-id">Your User ID:</label>
+  <input type="text" id="user-id" placeholder="2347034654367" />
+
+  <div class="chat-container">
+     Sender Messages 
+     <div id="sender-chat" class="chat-box">
+      <h3>Your Messages</h3>
+      <div id="sender-messages"></div>
+      <label for="recipient-id">Recipient User ID:</label>
+      <input type="text" id="recipient-id" placeholder="Recipient User ID" />
+      <label for="message">Message:</label>
+      <input type="text" id="message" placeholder="Type your message here" />
+      <button id="send" disabled>Send Message</button>
+    </div>
+
+     Receiver Messages 
+    <div id="receiver-chat" class="chat-box">
+      <h3>Received Messages</h3>
+      <div id="receiver-messages"></div>
+    </div>
+  </div>
+
+  <script>
+    let socket;
+
+    const userIdInput = document.getElementById('user-id');
+    const recipientIdInput = document.getElementById('recipient-id');
+    const messageInput = document.getElementById('message');
+    const sendButton = document.getElementById('send');
+    const senderMessages = document.getElementById('sender-messages');
+    const receiverMessages = document.getElementById('receiver-messages');
+
+    // Connect to WebSocket server when user ID changes
+    userIdInput.addEventListener('change', () => {
+      const userId = userIdInput.value.trim();
+      if (!userId) return;
+
+      if (socket) socket.close();
+
+      socket = new WebSocket(`ws://localhost:8080?userID=${encodeURIComponent(userId)}`);
+
+      socket.onopen = () => {
+        sendButton.disabled = false;
+        appendMessage(senderMessages, 'Connected to server.');
+      };
+
+      socket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.from && data.content) {
+          appendMessage(receiverMessages, `From ${data.from}: ${data.content}`);
+        } else {
+          appendMessage(senderMessages, `System: ${data.message}`);
+        }
+      };
+
+      socket.onclose = () => {
+        appendMessage(senderMessages, 'Disconnected from server.');
+        sendButton.disabled = true;
+      };
+    });
+
+    // Send message to recipient
+    sendButton.addEventListener('click', () => {
+      const recipientId = recipientIdInput.value.trim();
+      const content = messageInput.value.trim();
+
+      if (!recipientId || !content) {
+        appendMessage(senderMessages, 'Error: Recipient ID and message are required.');
+        return;
+      }
+
+      const message = JSON.stringify({ to: recipientId, content });
+      socket.send(message);
+      appendMessage(senderMessages, `You to ${recipientId}: ${content}`);
+      messageInput.value = '';
+    });
+
+    // Function to display messages in the chat
+    function appendMessage(container, message) {
+      const div = document.createElement('div');
+      div.textContent = message;
+      container.appendChild(div);
+      container.scrollTop = container.scrollHeight;
+    }
+  </script>
+</body>
+</html> -->

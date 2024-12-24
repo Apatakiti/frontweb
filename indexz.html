@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<body>
+  <h1>Chat App</h1>
+  <div id="chat"></div>
+  <input id="recipient" placeholder="Recipient ID" />
+  <input id="message" placeholder="Type a message..." />
+  <button onclick="sendMessage()">Send</button>
+  <button onclick="loadHistory()">Load History</button>
+
+  <script>
+    const ws = new WebSocket('ws://localhost:8080');
+    const chatDiv = document.getElementById('chat');
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.type === 'history') {
+        chatDiv.innerHTML = ''; // Clear chat
+        data.data.forEach((msg) => appendMessage(`${msg.sender_id}: ${msg.content}`));
+      } else if (data.type === 'message') {
+        appendMessage(`${data.data.sender_id}: ${data.data.content}`);
+      }
+    };
+
+    function appendMessage(message) {
+      const div = document.createElement('div');
+      div.textContent = message;
+      chatDiv.appendChild(div);
+    }
+
+    function sendMessage() {
+      const recipient = document.getElementById('recipient').value;
+      const content = document.getElementById('message').value;
+      ws.send(JSON.stringify({
+        type: 'message',
+        sender_id: '2347034654367', // Example senderID
+        recipient_id: recipient,
+        content: content
+      }));
+    }
+
+    function loadHistory() {
+      const recipient = document.getElementById('recipient').value;
+      ws.send(JSON.stringify({
+        type: 'history',
+        senderID: '2347034654367', // Example senderID
+        recipientID: recipient
+      }));
+    }
+  </script>
+</body>
+</html>
